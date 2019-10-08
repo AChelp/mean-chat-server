@@ -1,0 +1,23 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "description": "Chat Server",
+  "main": "dist/server.js",
+  "scripts": {
+    "start": "nodemon"
+  },
+  "keywords": [],
+  "author": "Chelp",
+  "license": "ISC",
+  "dependencies": {
+    "body-parser": "^1.18.2",
+    "express": "^4.16.2",
+    "mongoose": "^5.7.3",
+    "nodemon": "^1.19.3",
+    "socket.io": "^2.0.4"
+  },
+  "devDependencies": {
+    "gulp-typescript": "^5.0.1",
+    "typescript": "^3.6.3"
+  }
+}
