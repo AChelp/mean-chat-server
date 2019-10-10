@@ -2,7 +2,6 @@ import * as express from 'express';
 import * as bodyParser from 'body-parser';
 import * as mongoose from 'mongoose';
 import * as socket from 'socket.io';
-// import { ChatRoomType, MessageType, UserType } from './types';
 
 const port = 3000;
 
@@ -25,7 +24,7 @@ app.use((req, res, next) => {
 
 //connection to DB
 mongoose.connect(
-  'mongodb+srv://admin-Chelp:adminpass@chelpsdbs-1quvi.mongodb.net/admin?retryWrites=true&w=majority/mean-chat-DB',
+  'mongodb+srv://admin-Chelp:adminpass@chelpsdbs-1quvi.mongodb.net/mean-chat-DB?retryWrites=true&w=majority',
   { useNewUrlParser: true }
 );
 
@@ -37,70 +36,69 @@ db.once('open', function () {
 
 //schemas
 const messageSchema = new mongoose.Schema({
-  id: String,
-  fromId: String,
-  body: String,
-  roomId: String,
-  isRead: Boolean,
-  sendAt: String,
+  user: String,
+  message: String,
 });
 
 const userSchema = new mongoose.Schema({
-  id: String,
-  name: String,
-  email: String,
+  username: { type: String, unique: true },
+  email: { type: String, unique: true },
   password: String,
 });
 
-const chatroomSchema = new mongoose.Schema({
-  id: String,
-  name: String,
-  description: String,
+const chatRoomSchema = new mongoose.Schema({
+  name: { type: String, unique: true },
   messages: [messageSchema],
+  description: String,
 });
 
 //models
-const Messages = mongoose.model('Messages', messageSchema);
-const Users = mongoose.model('Users', userSchema);
-const Chatrooms = mongoose.model('Chatrooms', chatroomSchema);
+const User = mongoose.model('Users', userSchema);
+const ChatRoom = mongoose.model('ChatRooms', chatRoomSchema);
 
 const io = socket.listen(server);
 
 io.sockets.on('connection', socket => {
+
   //join
   socket.on('join', data => {
     socket.join(data.room);
-    Chatrooms.find((err, rooms) => {
+    ChatRoom.find((err, rooms) => {
       if (err) {
         console.log(err);
-        return false;
+        return;
       }
-
-      if (!rooms.find(room => room.name === data.room)) {
-        Chatrooms.insert({
+      // console.log(rooms)
+      if (rooms.find(room => room.name === data.room)) {
+        io.sockets.emit('room ready', { isReady: true });
+      } else {
+        let newChatroom = new ChatRoom({
           name: data.room,
           messages: [],
           description: data.description
         });
+        newChatroom.save(err => {
+          if (err) {
+            console.log(err);
+            return;
+          }
+        });
+        io.sockets.emit('room ready', { isReady: true });
+        console.log('new room created')
       }
     });
   });
 
-  //message
+  // message
   socket.on('message', data => {
-    io.in(data.room).emit('new message', {
+    let newMessage = {
       user: data.user,
       message: data.message
-    });
-    Chatrooms.update({ name: data.room }, {
-        $push: {
-          messages: {
-            user: data.user,
-            message: data.message
-          }
-        }
-      },
-      (err, res) => {
+    };
+
+    io.in(data.room).emit('new message', newMessage);
+    ChatRoom.updateOne({ name: data.room }, { $push: { messages: newMessage } },
+      (err) => {
         if (err) {
           console.log(err);
           return false;
@@ -108,7 +106,7 @@ io.sockets.on('connection', socket => {
       });
   });
 
-  //Typing
+  // typing
   socket.on('typing', data => {
     socket.broadcast.in(data.room).emit('typing', {
       data: data,
@@ -117,26 +115,28 @@ io.sockets.on('connection', socket => {
   });
 });
 
-app.get('/', (req, res, next) => {
+app.get('/', (req, res) => {
   res.send('Welcome to chat...');
 });
 
-//registration
-app.post('/api/users', (req, res, next) => {
+// registration
+app.post('/api/users', (req, res) => {
   let user = {
-    name: req.body.username,
+    username: req.body.username,
     email: req.body.email,
     password: req.body.password,
   };
 
-  Users.find((err, users) => {
+  User.find((err, users) => {
     if (err) {
       console.log(err);
       return res.status(500).send(err);
     }
 
-    if (!users.find(savedUser => savedUser.name === user.name)) {
-      Users.insert(user, (err, User) => {
+    if (!users.find(savedUser => savedUser.username === user.username)) {
+      let newUser = new User(user);
+
+      newUser.save((err, User) => {
         if (err) {
           res.send(err);
         }
@@ -148,21 +148,23 @@ app.post('/api/users', (req, res, next) => {
   });
 });
 
-//log in
+// login
 app.post('/api/login', (req, res) => {
   let isPresent = false;
   let isCorrectPassword = false;
   let loggedInUser;
 
-  Users.find((err, users) => {
+  User.find((err, users) => {
     if (err) {
       return res.send(err);
     }
 
-    let foundUser = users.find(user => user.name === req.body.name);
-
+    let foundUser = users.find(user => user.username === req.body.username);
     if (foundUser) {
       isPresent = true
+    } else {
+      res.json({ wrongUsername: true });
+      return;
     }
 
     if (foundUser.password === req.body.password) {
@@ -174,16 +176,33 @@ app.post('/api/login', (req, res) => {
   })
 });
 
-//getting all users
-app.get('/chatroom/:room', (req, res, next) => {
+// get user
+app.get('/api/users', (req, res) => {
+  User.find((err, users) => {
+    if (err) {
+      console.log(err);
+    }
+    res.json(users);
+  })
+});
+
+// get rooms
+app.get('/chatrooms', (req, res) => {
+  ChatRoom.find((err, rooms) => {
+    res.json(rooms)
+  })
+});
+
+// get room messages
+app.get('/chatroom/:room', (req, res) => {
   let room = req.params.room;
-  Chatrooms.find({ name: room }, (err, chatroom) => {
+
+  ChatRoom.findOne({ name: room }, (err, chatRoom) => {
     if (err) {
       console.log(err);
       return;
     }
-
-    res.json(chatroom.messages[0])
+    res.json(chatRoom.messages);
   })
 });
 

@@ -17,4 +17,5 @@ export type ChatRoomType = {
     id: string;
     name: string;
     description: string;
+    messages: MessageType[];
 }

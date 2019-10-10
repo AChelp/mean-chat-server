@@ -4,7 +4,6 @@ var express = require("express");
 var bodyParser = require("body-parser");
 var mongoose = require("mongoose");
 var socket = require("socket.io");
-// import { ChatRoomType, MessageType, UserType } from './types';
 var port = 3000;
 var app = express();
 app.use(bodyParser.json());
@@ -21,7 +20,7 @@ app.use(function (req, res, next) {
     next();
 });
 //connection to DB
-mongoose.connect('mongodb+srv://admin-Chelp:adminpass@chelpsdbs-1quvi.mongodb.net/admin?retryWrites=true&w=majority/mean-chat-DB', { useNewUrlParser: true });
+mongoose.connect('mongodb+srv://admin-Chelp:adminpass@chelpsdbs-1quvi.mongodb.net/mean-chat-DB?retryWrites=true&w=majority', { useNewUrlParser: true });
 var db = mongoose.connection;
 db.on('error', console.error.bind(console, 'connection error:'));
 db.once('open', function () {
@@ -29,90 +28,93 @@ db.once('open', function () {
 });
 //schemas
 var messageSchema = new mongoose.Schema({
-    id: String,
-    fromId: String,
-    body: String,
-    roomId: String,
-    isRead: Boolean,
-    sendAt: String,
+    user: String,
+    message: String,
 });
 var userSchema = new mongoose.Schema({
-    id: String,
-    name: String,
+    username: String,
     email: String,
     password: String,
 });
-var chatroomSchema = new mongoose.Schema({
-    id: String,
+var chatRoomSchema = new mongoose.Schema({
     name: String,
-    description: String,
     messages: [messageSchema],
+    description: String,
 });
 //models
-var Messages = mongoose.model('Messages', messageSchema);
-var Users = mongoose.model('Users', userSchema);
-var Chatrooms = mongoose.model('Chatrooms', chatroomSchema);
+var User = mongoose.model('Users', userSchema);
+var ChatRoom = mongoose.model('ChatRooms', chatRoomSchema);
 var io = socket.listen(server);
 io.sockets.on('connection', function (socket) {
     //join
     socket.on('join', function (data) {
         socket.join(data.room);
-        Chatrooms.find(function (err, rooms) {
+        ChatRoom.find(function (err, rooms) {
             if (err) {
                 console.log(err);
-                return false;
+                return;
             }
-            if (!rooms.find(function (room) { return room.name === data.room; })) {
-                Chatrooms.insert({
+            // console.log(rooms)
+            if (rooms.find(function (room) { return room.name === data.room; })) {
+                io.sockets.emit('room ready', { isReady: true });
+            }
+            else {
+                var newChatroom = new ChatRoom({
                     name: data.room,
                     messages: [],
                     description: data.description
                 });
+                newChatroom.save(function (err) {
+                    if (err) {
+                        console.log(err);
+                        return;
+                    }
+                });
+                io.sockets.emit('room ready', { isReady: true });
+                console.log('new room created');
             }
         });
     });
-    //message
+    // message
     socket.on('message', function (data) {
-        io.in(data.room).emit('new message', {
+        var newMessage = {
             user: data.user,
             message: data.message
-        });
-        Chatrooms.update({ name: data.room }, {
-            $push: {
-                messages: {
-                    user: data.user,
-                    message: data.message
-                }
-            }
-        }, function (err, res) {
+        };
+        io.in(data.room).emit('new message', newMessage);
+        ChatRoom.updateOne({ name: data.room }, { $push: { messages: newMessage } }, function (err) {
             if (err) {
                 console.log(err);
                 return false;
             }
         });
     });
-    //Typing
+    // typing
     socket.on('typing', function (data) {
-        socket.broadcast.in(data.room).emit('typing', { data: data, isTyping: true });
+        socket.broadcast.in(data.room).emit('typing', {
+            data: data,
+            isTyping: true
+        });
     });
 });
-app.get('/', function (req, res, next) {
+app.get('/', function (req, res) {
     res.send('Welcome to chat...');
 });
-//registration
-app.post('/api/users', function (req, res, next) {
+// registration
+app.post('/api/users', function (req, res) {
     var user = {
-        name: req.body.username,
+        username: req.body.username,
         email: req.body.email,
         password: req.body.password,
     };
-    Users.find(function (err, users) {
+    User.find(function (err, users) {
         if (err) {
             console.log(err);
             return res.status(500).send(err);
         }
-        if (!users.find(function (savedUser) { return savedUser.name === user.name; })) {
-            Users.insert(user, function (err, User) {
+        if (!users.find(function (savedUser) { return savedUser.username === user.username; })) {
+            var newUser = new User(user);
+            newUser.save(function (err, User) {
                 if (err) {
                     res.send(err);
                 }
@@ -124,9 +126,54 @@ app.post('/api/users', function (req, res, next) {
         }
     });
 });
-//log in
+// login
 app.post('/api/login', function (req, res) {
     var isPresent = false;
     var isCorrectPassword = false;
     var loggedInUser;
+    User.find(function (err, users) {
+        if (err) {
+            return res.send(err);
+        }
+        var foundUser = users.find(function (user) { return user.username === req.body.username; });
+        if (foundUser) {
+            isPresent = true;
+        }
+        else {
+            res.json({ wrongUsername: true });
+            return;
+        }
+        if (foundUser.password === req.body.password) {
+            isCorrectPassword = true;
+            loggedInUser = foundUser;
+        }
+        res.json({ isPresent: isPresent, isCorrectPassword: isCorrectPassword, user: loggedInUser });
+    });
+});
+// get user
+app.get('/api/users', function (req, res) {
+    User.find(function (err, users) {
+        if (err) {
+            console.log(err);
+        }
+        res.json(users);
+    });
+});
+// get rooms
+app.get('/chatrooms', function (req, res) {
+    ChatRoom.find(function (err, rooms) {
+        res.json(rooms);
+    });
+});
+// get room messages
+app.get('/chatroom/:room', function (req, res) {
+    var room = req.params.room;
+    ChatRoom.findOne({ name: room }, function (err, chatRoom) {
+        if (err) {
+            console.log(err);
+            return;
+        }
+        // console.log(chatRoom);
+        res.json(chatRoom.messages);
+    });
 });
