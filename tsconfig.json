@@ -2,10 +2,10 @@
   "files": [
     "src/*.ts",
     "./*.ts",
-    "./config/*.ts",
-    "./models/*.ts",
-    "./rooms/*.ts",
-    "./helpers/*.ts"
+    "./src/config/*.ts",
+    "./src/models/*.ts",
+    "./src/rooms/*.ts",
+    "./src/helpers/*.ts"
   ],
   "compilerOptions": {
     "target": "es5"

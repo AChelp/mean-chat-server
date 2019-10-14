@@ -8,22 +8,23 @@ var passport = require("passport");
 var jwt = require("jsonwebtoken");
 var socketioJWT = require("socketio-jwt");
 var moment = require("moment");
-var Chatroom_1 = require("./models/Chatroom");
-var User_1 = require("./models/User");
-var database_1 = require("./config/database");
-var validateNewUserData_1 = require("./helpers/validateNewUserData");
-var passport_1 = require("./config/passport");
-var general_1 = require("./rooms/general");
-var reverse_bot_1 = require("./rooms/reverse-bot");
-var echo_bot_1 = require("./rooms/echo-bot");
-var ignore_bot_1 = require("./rooms/ignore-bot");
-var spambot_1 = require("./rooms/spambot");
-var spam_bot_data_1 = require("./spam-bot-data");
+var Chatroom_1 = require("./src/models/Chatroom");
+var User_1 = require("./src/models/User");
+var database_1 = require("./src/config/database");
+var validateNewUserData_1 = require("./src/helpers/validateNewUserData");
+var passport_1 = require("./src/config/passport");
+var general_1 = require("./src/rooms/general");
+var reverse_bot_1 = require("./src/rooms/reverse-bot");
+var echo_bot_1 = require("./src/rooms/echo-bot");
+var ignore_bot_1 = require("./src/rooms/ignore-bot");
+var spambot_1 = require("./src/rooms/spambot");
+var spam_bot_data_1 = require("./src/spam-bot-data");
 passport_1.passportConfig(passport);
 var port = 3000;
 var app = express();
 app.use(bodyParser.json());
 app.use(passport.initialize());
+app.use('/uploads', express.static(__dirname + '/uploads'));
 // starting server
 var server = app.listen(port, function () {
     console.log("Server started on port " + port + "...");
@@ -54,20 +55,29 @@ db.once('open', function () {
     ignore_bot_1.setIgnoreBot();
 });
 var spamMessagesTimeout;
+var onlineUsers = ['General room', 'Reverse bot', 'Echo bot', 'Ignore bot', 'Spam bot'];
 // sockets
 var io = socket.listen(server);
 io.sockets.on('connection', socketioJWT.authorize({
     secret: database_1.dbConfig.secret,
     timeout: 15000,
 })).on('authenticated', function (socket) {
-    console.log('user connected');
+    socket.on('say hello', function (username) {
+        socket.username = username;
+        onlineUsers.push(username);
+        socket.broadcast.emit('online users updated', onlineUsers);
+        console.log(onlineUsers);
+    });
+    socket.on('disconnect', function () {
+        onlineUsers = onlineUsers.filter(function (username) { return username !== socket.username; });
+        socket.broadcast.emit('online users updated', onlineUsers);
+        console.log(onlineUsers);
+    });
     // join
     var prevRoom;
     socket.on('join', function (data) {
         socket.leave(data.prevRoom);
-        // console.log(data.prevRoom + ' was leaved');
         socket.join(data.room);
-        console.log('user joins to ' + data.room);
         Chatroom_1.ChatRoom.find(function (err, rooms) {
             if (err) {
                 console.log(err);
@@ -95,7 +105,6 @@ io.sockets.on('connection', socketioJWT.authorize({
         if (data.room.includes('Spambot')) {
             var room_1 = data.room;
             spamMessagesTimeout = setTimeout(function sendSpamMessage() {
-                console.log('get ready for the new Spam message in ' + data.room);
                 var delay = Math.round(3000 + Math.random() * (6000 - 1000));
                 var newSpamFact = spam_bot_data_1.spamBotData[Math.round(Math.random() * spam_bot_data_1.spamBotData.length)];
                 var newSpamMessage = {
@@ -114,7 +123,6 @@ io.sockets.on('connection', socketioJWT.authorize({
             }, Math.round(3000 + Math.random() * (6000 - 1000)));
         }
         if (prevRoom && prevRoom.includes('Spambot')) {
-            console.log('Stop this shit now! ' + spamMessagesTimeout);
             clearTimeout(spamMessagesTimeout);
         }
         prevRoom = data.room;
@@ -152,10 +160,9 @@ io.sockets.on('connection', socketioJWT.authorize({
                 });
                 io.in(room_2).emit('new message', newReverseMessage_1);
             }, 3500);
-            // echo bot
         }
         else if (data.room.includes('Echo')) {
-            console.log('echo');
+            // echo bot
             var room_3 = data.room;
             var newEchoMessage_1 = {
                 user: 'Echo bot',
@@ -174,12 +181,17 @@ io.sockets.on('connection', socketioJWT.authorize({
         }
     });
     // typing
-    // socket.on('typing', data => {
-    //   socket.broadcast.in(data.room).emit('typing', {
-    //     data: data,
-    //     isTyping: true
-    //   });
-    // });
+    socket.on('typing', function (data) {
+        console.log(data.user + ' is typing');
+        socket.broadcast.in(data.roomName).emit('typing', {
+            user: data.user,
+        });
+    });
+    // read notification
+    socket.on('seen', function (data) {
+        console.log('someone see something ' + JSON.stringify(data));
+        socket.in(data.roomName).emit('seen', data);
+    });
 });
 app.get('/', function (req, res) {
     res.send('Hey, there!');
@@ -261,13 +273,17 @@ app.post('/login', function (req, res) {
         }
     });
 });
-// get user
+// get users
 app.get('/users', function (req, res) {
     User_1.User.find(function (err, users) {
         if (err) {
             console.log(err);
         }
-        res.json(users);
+        var usersList = {
+            users: users,
+            onlineUsers: onlineUsers
+        };
+        res.json(usersList);
     });
 });
 // get rooms
@@ -286,4 +302,8 @@ app.get('/chatroom/:room', function (req, res) {
         }
         res.json(chatRoom.messages);
     });
+});
+app.get('/uploads/:img', function (req, res) {
+    console.log(JSON.stringify(req.params));
+    res.sendFile(__dirname + '/uploads/' + req.params.img);
 });

@@ -6,31 +6,28 @@ import * as passport from 'passport';
 import * as jwt from 'jsonwebtoken'
 import * as socketioJWT from 'socketio-jwt';
 import * as moment from 'moment';
-import { ChatRoom } from './models/Chatroom';
-import { User } from './models/User';
-import { dbConfig } from './config/database';
-import { validateNewUserData } from './helpers/validateNewUserData';
-import { passportConfig } from './config/passport';
-import { setGeneral } from './rooms/general';
-import { setReverseBot } from './rooms/reverse-bot';
-import { setEchoBot } from './rooms/echo-bot';
-import { setIgnoreBot } from './rooms/ignore-bot';
-import { setSpamBot } from './rooms/spambot';
-import { spamBotData } from './spam-bot-data';
-import { longReporter } from 'gulp-typescript/release/reporter';
+import * as multer from 'multer';
+import { ChatRoom } from './src/models/Chatroom';
+import { User } from './src/models/User';
+import { dbConfig } from './src/config/database';
+import { validateNewUserData } from './src/helpers/validateNewUserData';
+import { passportConfig } from './src/config/passport';
+import { setGeneral } from './src/rooms/general';
+import { setReverseBot } from './src/rooms/reverse-bot';
+import { setEchoBot } from './src/rooms/echo-bot';
+import { setIgnoreBot } from './src/rooms/ignore-bot';
+import { setSpamBot } from './src/rooms/spambot';
+import { spamBotData } from './src/spam-bot-data';
 
+// passport settings
 passportConfig(passport);
 
-const port = 3000;
-
+// server settings
+const port = process.env.PORT || 3000;
 const app = express();
 app.use(bodyParser.json());
 app.use(passport.initialize());
-
-// starting server
-const server = app.listen(port, () => {
-  console.log(`Server started on port ${port}...`);
-});
+app.use('/uploads', express.static(__dirname + '/uploads'));
 
 // setting CORS headers
 app.use((req, res, next) => {
@@ -46,11 +43,6 @@ mongoose.connect(
   dbConfig.database,
   { useNewUrlParser: true, useUnifiedTopology: true }
 );
-// mongoose.connect(
-//   'mongodb://localhost:27017/mean-chat-DB',
-//   { useNewUrlParser: true, useUnifiedTopology: true }
-// );
-// mongoose.set('useCreateIndex', true);
 
 const db = mongoose.connection;
 db.on('error', console.error.bind(console, 'connection error:'));
@@ -63,7 +55,29 @@ db.once('open', () => {
   setIgnoreBot();
 });
 
+// file upload settings
+
+const savePath = 'uploads/';
+const upload = multer({ dest: savePath });
+
+app.use(multer({
+  dest: savePath,
+  rename: function (fieldname, filename) {
+    return filename;
+  },
+}));
+
+
+// starting server
+
+const server = app.listen(port, () => {
+  console.log(`Server started on port ${port}...`);
+});
+
+// server variables
+
 let spamMessagesTimeout;
+let onlineUsers = ['General room', 'Reverse bot', 'Echo bot', 'Ignore bot', 'Spam bot'];
 
 // sockets
 const io = socket.listen(server);
@@ -72,17 +86,27 @@ io.sockets.on('connection', socketioJWT.authorize({
   secret: dbConfig.secret,
   timeout: 15000,
 })).on('authenticated', socket => {
-  console.log('user connected');
+
+  socket.on('say hello', username => {
+    socket.username = username;
+    onlineUsers.push(username);
+    socket.broadcast.emit('online users updated', onlineUsers);
+
+    console.log(onlineUsers);
+  });
+
+  socket.on('disconnect', () => {
+    onlineUsers = onlineUsers.filter(username => username !== socket.username);
+    socket.broadcast.emit('online users updated', onlineUsers);
+    console.log(onlineUsers);
+  });
 
   // join
   let prevRoom;
 
   socket.on('join', data => {
-
     socket.leave(data.prevRoom);
-    // console.log(data.prevRoom + ' was leaved');
     socket.join(data.room);
-    console.log('user joins to ' + data.room);
 
     ChatRoom.find((err, rooms) => {
       if (err) {
@@ -111,7 +135,7 @@ io.sockets.on('connection', socketioJWT.authorize({
 
     if (data.room.includes('Spambot')) {
       let room = data.room;
-      spamMessagesTimeout = setTimeout(function sendSpamMessage () {
+      spamMessagesTimeout = setTimeout(function sendSpamMessage() {
         let delay = Math.round(3000 + Math.random() * (6000 - 1000));
 
         let newSpamFact = spamBotData[Math.round(Math.random() * spamBotData.length)];
@@ -136,7 +160,7 @@ io.sockets.on('connection', socketioJWT.authorize({
     }
 
     if (prevRoom && prevRoom.includes('Spambot')) {
-        clearTimeout(spamMessagesTimeout);
+      clearTimeout(spamMessagesTimeout);
     }
 
     prevRoom = data.room;
@@ -185,10 +209,10 @@ io.sockets.on('connection', socketioJWT.authorize({
           });
         io.in(room).emit('new message', newReverseMessage);
       }, 3500);
+    } else if (data.room.includes('Echo')) {
 
       // echo bot
-    } else if (data.room.includes('Echo')) {
-      console.log('echo');
+
       let room = data.room;
 
       let newEchoMessage = {
@@ -214,12 +238,18 @@ io.sockets.on('connection', socketioJWT.authorize({
   });
 
   // typing
-  // socket.on('typing', data => {
-  //   socket.broadcast.in(data.room).emit('typing', {
-  //     data: data,
-  //     isTyping: true
-  //   });
-  // });
+
+  socket.on('typing', data => {
+    socket.broadcast.in(data.roomName).emit('typing', {
+      user: data.user,
+    });
+  });
+
+  // read notification
+
+  socket.on('seen', data => {
+    socket.in(data.roomName).emit('seen', data);
+  });
 });
 
 app.get('/', (req, res) => {
@@ -227,6 +257,7 @@ app.get('/', (req, res) => {
 });
 
 // sign up
+
 app.post('/signup', (req, res) => {
   const user = {
     name: req.body.name,
@@ -277,6 +308,7 @@ app.post('/signup', (req, res) => {
 });
 
 // login
+
 app.post('/login', function (req, res) {
   User.findOne({
     email: req.body.email
@@ -312,17 +344,25 @@ app.post('/login', function (req, res) {
   });
 });
 
-// get user
+// get users
+
 app.get('/users', (req, res) => {
   User.find((err, users) => {
     if (err) {
       console.log(err);
     }
-    res.json(users);
+
+    let usersList = {
+      users,
+      onlineUsers
+    };
+
+    res.json(usersList);
   })
 });
 
 // get rooms
+
 app.get('/chatrooms', (req, res) => {
   ChatRoom.find((err, rooms) => {
     res.json(rooms)
@@ -330,6 +370,7 @@ app.get('/chatrooms', (req, res) => {
 });
 
 // get room messages
+
 app.get('/chatroom/:room', (req, res) => {
   let room = req.params.room;
 
@@ -340,4 +381,10 @@ app.get('/chatroom/:room', (req, res) => {
     }
     res.json(chatRoom.messages);
   })
+});
+
+// get avatar
+
+app.get('/uploads/:img', (req, res) => {
+  res.sendFile(__dirname + '/uploads/' + req.params.img)
 });
