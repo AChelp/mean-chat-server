@@ -6,7 +6,6 @@ import * as passport from 'passport';
 import * as jwt from 'jsonwebtoken'
 import * as socketioJWT from 'socketio-jwt';
 import * as moment from 'moment';
-// import * as multer from 'multer';
 import * as fs from 'fs';
 import { ChatRoom } from './src/models/Chatroom';
 import { User } from './src/models/User';
@@ -57,27 +56,6 @@ db.once('open', () => {
   setIgnoreBot();
 });
 
-// file upload settings
-
-// const savePath = 'uploads/';
-// const storage = multer.diskStorage({
-//   destination: (req, file, cb) => {
-//     cb(null, savePath);
-//   },
-//   filename: (req, file, cb) => {
-//     cb(null, file.fieldname + '-' + moment())
-//   }
-// });
-// let upload = multer({storage});
-//
-// app.use(multer({
-//   dest: savePath,
-//   rename: function (fieldname, filename) {
-//     return filename + moment();
-//   },
-// }).any());
-
-
 // starting server
 
 const server = app.listen(port, () => {
@@ -90,6 +68,7 @@ let spamMessagesTimeout;
 let onlineUsers = ['General room', 'Reverse bot', 'Echo bot', 'Ignore bot', 'Spam bot'];
 
 // sockets
+
 const io = socket.listen(server);
 
 io.sockets.on('connection', socketioJWT.authorize({
@@ -109,6 +88,7 @@ io.sockets.on('connection', socketioJWT.authorize({
   });
 
   // join
+
   let prevRoom;
 
   socket.on('join', data => {
@@ -173,6 +153,7 @@ io.sockets.on('connection', socketioJWT.authorize({
   });
 
   // message
+
   socket.on('message', data => {
 
     let newMessage = {
@@ -312,7 +293,6 @@ app.post('/signup', (req, res) => {
             });
           }
 
-
           // saving user
 
           const newUser = new User(user);
@@ -334,7 +314,6 @@ app.post('/signup', (req, res) => {
       }
     )
   }
-  // });
 });
 
 // login
@@ -409,8 +388,6 @@ app.get('/chatroom/:room/:skipAmount', (req, res) => {
       console.log(err);
       return;
     }
-
-    // const sliceFrom =
 
     const messagesToSend =
       chatRoom.messages
