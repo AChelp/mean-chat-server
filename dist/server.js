@@ -8,6 +8,8 @@ var passport = require("passport");
 var jwt = require("jsonwebtoken");
 var socketioJWT = require("socketio-jwt");
 var moment = require("moment");
+// import * as multer from 'multer';
+var fs = require("fs");
 var Chatroom_1 = require("./src/models/Chatroom");
 var User_1 = require("./src/models/User");
 var database_1 = require("./src/config/database");
@@ -19,16 +21,15 @@ var echo_bot_1 = require("./src/rooms/echo-bot");
 var ignore_bot_1 = require("./src/rooms/ignore-bot");
 var spambot_1 = require("./src/rooms/spambot");
 var spam_bot_data_1 = require("./src/spam-bot-data");
+// passport settings
 passport_1.passportConfig(passport);
-var port = 3000;
+// server settings
+var port = process.env.PORT || 3000;
 var app = express();
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '50mb' }));
 app.use(passport.initialize());
 app.use('/uploads', express.static(__dirname + '/uploads'));
-// starting server
-var server = app.listen(port, function () {
-    console.log("Server started on port " + port + "...");
-});
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 // setting CORS headers
 app.use(function (req, res, next) {
     res.append('Access-Control-Allow-Origin', 'http://localhost:4200');
@@ -39,11 +40,6 @@ app.use(function (req, res, next) {
 });
 // connecting to DB
 mongoose.connect(database_1.dbConfig.database, { useNewUrlParser: true, useUnifiedTopology: true });
-// mongoose.connect(
-//   'mongodb://localhost:27017/mean-chat-DB',
-//   { useNewUrlParser: true, useUnifiedTopology: true }
-// );
-// mongoose.set('useCreateIndex', true);
 var db = mongoose.connection;
 db.on('error', console.error.bind(console, 'connection error:'));
 db.once('open', function () {
@@ -54,6 +50,29 @@ db.once('open', function () {
     spambot_1.setSpamBot();
     ignore_bot_1.setIgnoreBot();
 });
+// file upload settings
+// const savePath = 'uploads/';
+// const storage = multer.diskStorage({
+//   destination: (req, file, cb) => {
+//     cb(null, savePath);
+//   },
+//   filename: (req, file, cb) => {
+//     cb(null, file.fieldname + '-' + moment())
+//   }
+// });
+// let upload = multer({storage});
+//
+// app.use(multer({
+//   dest: savePath,
+//   rename: function (fieldname, filename) {
+//     return filename + moment();
+//   },
+// }).any());
+// starting server
+var server = app.listen(port, function () {
+    console.log("Server started on port " + port + "...");
+});
+// server variables
 var spamMessagesTimeout;
 var onlineUsers = ['General room', 'Reverse bot', 'Echo bot', 'Ignore bot', 'Spam bot'];
 // sockets
@@ -66,12 +85,10 @@ io.sockets.on('connection', socketioJWT.authorize({
         socket.username = username;
         onlineUsers.push(username);
         socket.broadcast.emit('online users updated', onlineUsers);
-        console.log(onlineUsers);
     });
     socket.on('disconnect', function () {
         onlineUsers = onlineUsers.filter(function (username) { return username !== socket.username; });
         socket.broadcast.emit('online users updated', onlineUsers);
-        console.log(onlineUsers);
     });
     // join
     var prevRoom;
@@ -97,7 +114,6 @@ io.sockets.on('connection', socketioJWT.authorize({
                         return;
                     }
                     io.sockets.emit('room ready', { isReady: true });
-                    console.log('new room created');
                 });
             }
         });
@@ -139,12 +155,10 @@ io.sockets.on('connection', socketioJWT.authorize({
                 console.log(err);
                 return;
             }
-            console.log('message saved in ' + data.room);
         });
         io.in(data.room).emit('new message', newMessage);
         // reverse bot
         if (data.room.includes('Reverse')) {
-            console.log('reverse');
             var room_2 = data.room;
             var newReverseMessage_1 = {
                 user: 'Reverse bot',
@@ -159,7 +173,7 @@ io.sockets.on('connection', socketioJWT.authorize({
                     }
                 });
                 io.in(room_2).emit('new message', newReverseMessage_1);
-            }, 3500);
+            }, 3000);
         }
         else if (data.room.includes('Echo')) {
             // echo bot
@@ -182,14 +196,12 @@ io.sockets.on('connection', socketioJWT.authorize({
     });
     // typing
     socket.on('typing', function (data) {
-        console.log(data.user + ' is typing');
         socket.broadcast.in(data.roomName).emit('typing', {
             user: data.user,
         });
     });
     // read notification
     socket.on('seen', function (data) {
-        console.log('someone see something ' + JSON.stringify(data));
         socket.in(data.roomName).emit('seen', data);
     });
 });
@@ -201,7 +213,8 @@ app.post('/signup', function (req, res) {
     var user = {
         name: req.body.name,
         email: req.body.email,
-        password: req.body.password
+        password: req.body.password,
+        avatar: '',
     };
     if (!validateNewUserData_1.validateNewUserData(user)) {
         res.json({
@@ -210,6 +223,7 @@ app.post('/signup', function (req, res) {
         });
     }
     else {
+        console.log(user);
         // checking if user already exist
         User_1.User.find({ $or: [{ 'name': user.name }, { 'email': user.email }] }, function (err, users) {
             if (users.length) {
@@ -219,6 +233,26 @@ app.post('/signup', function (req, res) {
                 });
             }
             else {
+                // saving avatar
+                if (req.body.image) {
+                    var data_url = req.body.image;
+                    var matches = data_url.match(/^data:.+\/(.+);base64,(.*)$/);
+                    var ext = matches[1];
+                    var base64 = matches[2];
+                    // @ts-ignore
+                    var buffer = new Buffer.from(base64, 'base64');
+                    var fileName = req.body.name.toLowerCase() + '.' + ext;
+                    user.avatar = fileName;
+                    fs.writeFile(__dirname + '/uploads/' + fileName, buffer, function (err) {
+                        // res.send('success');
+                        if (err) {
+                            console.log(err);
+                        }
+                        else {
+                            console.log('saved in ' + __dirname + '/uploads');
+                        }
+                    });
+                }
                 // saving user
                 var newUser = new User_1.User(user);
                 newUser.save(function (err) {
@@ -236,6 +270,7 @@ app.post('/signup', function (req, res) {
             }
         });
     }
+    // });
 });
 // login
 app.post('/login', function (req, res) {
@@ -293,17 +328,21 @@ app.get('/chatrooms', function (req, res) {
     });
 });
 // get room messages
-app.get('/chatroom/:room', function (req, res) {
-    var room = req.params.room;
+app.get('/chatroom/:room/:skipAmount', function (req, res) {
+    var _a = req.params, room = _a.room, skipAmount = _a.skipAmount;
     Chatroom_1.ChatRoom.findOne({ name: room }, function (err, chatRoom) {
         if (err) {
             console.log(err);
             return;
         }
-        res.json(chatRoom.messages);
+        // const sliceFrom =
+        var messagesToSend = chatRoom.messages
+            .slice(chatRoom.messages.length - skipAmount - 10, chatRoom.messages.length - skipAmount);
+        res.json(messagesToSend);
     });
+    console.log('throw more ten from ' + room + ' ' + skipAmount);
 });
+// get avatar
 app.get('/uploads/:img', function (req, res) {
-    console.log(JSON.stringify(req.params));
     res.sendFile(__dirname + '/uploads/' + req.params.img);
 });

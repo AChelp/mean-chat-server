@@ -6,7 +6,8 @@ import * as passport from 'passport';
 import * as jwt from 'jsonwebtoken'
 import * as socketioJWT from 'socketio-jwt';
 import * as moment from 'moment';
-import * as multer from 'multer';
+// import * as multer from 'multer';
+import * as fs from 'fs';
 import { ChatRoom } from './src/models/Chatroom';
 import { User } from './src/models/User';
 import { dbConfig } from './src/config/database';
@@ -25,9 +26,10 @@ passportConfig(passport);
 // server settings
 const port = process.env.PORT || 3000;
 const app = express();
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '50mb' }));
 app.use(passport.initialize());
 app.use('/uploads', express.static(__dirname + '/uploads'));
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
 // setting CORS headers
 app.use((req, res, next) => {
@@ -57,15 +59,23 @@ db.once('open', () => {
 
 // file upload settings
 
-const savePath = 'uploads/';
-const upload = multer({ dest: savePath });
-
-app.use(multer({
-  dest: savePath,
-  rename: function (fieldname, filename) {
-    return filename;
-  },
-}));
+// const savePath = 'uploads/';
+// const storage = multer.diskStorage({
+//   destination: (req, file, cb) => {
+//     cb(null, savePath);
+//   },
+//   filename: (req, file, cb) => {
+//     cb(null, file.fieldname + '-' + moment())
+//   }
+// });
+// let upload = multer({storage});
+//
+// app.use(multer({
+//   dest: savePath,
+//   rename: function (fieldname, filename) {
+//     return filename + moment();
+//   },
+// }).any());
 
 
 // starting server
@@ -91,14 +101,11 @@ io.sockets.on('connection', socketioJWT.authorize({
     socket.username = username;
     onlineUsers.push(username);
     socket.broadcast.emit('online users updated', onlineUsers);
-
-    console.log(onlineUsers);
   });
 
   socket.on('disconnect', () => {
     onlineUsers = onlineUsers.filter(username => username !== socket.username);
     socket.broadcast.emit('online users updated', onlineUsers);
-    console.log(onlineUsers);
   });
 
   // join
@@ -126,7 +133,6 @@ io.sockets.on('connection', socketioJWT.authorize({
             return;
           }
           io.sockets.emit('room ready', { isReady: true });
-          console.log('new room created')
         });
       }
     });
@@ -181,8 +187,6 @@ io.sockets.on('connection', socketioJWT.authorize({
           console.log(err);
           return;
         }
-
-        console.log('message saved in ' + data.room)
       });
 
     io.in(data.room).emit('new message', newMessage);
@@ -190,13 +194,11 @@ io.sockets.on('connection', socketioJWT.authorize({
     // reverse bot
 
     if (data.room.includes('Reverse')) {
-      console.log('reverse');
       let room = data.room;
       let newReverseMessage = {
         user: 'Reverse bot',
         message: data.message.split('').reverse().join(''),
         sendAt: moment().format('h:mm A'),
-
       };
 
       setTimeout(() => {
@@ -208,7 +210,7 @@ io.sockets.on('connection', socketioJWT.authorize({
             }
           });
         io.in(room).emit('new message', newReverseMessage);
-      }, 3500);
+      }, 3000);
     } else if (data.room.includes('Echo')) {
 
       // echo bot
@@ -259,10 +261,12 @@ app.get('/', (req, res) => {
 // sign up
 
 app.post('/signup', (req, res) => {
+
   const user = {
     name: req.body.name,
     email: req.body.email,
-    password: req.body.password
+    password: req.body.password,
+    avatar: '',
   };
 
   if (!validateNewUserData(user)) {
@@ -271,6 +275,7 @@ app.post('/signup', (req, res) => {
       msg: 'Please, enter correct data.'
     });
   } else {
+    console.log(user);
 
     // checking if user already exist
 
@@ -283,6 +288,30 @@ app.post('/signup', (req, res) => {
             msg: 'User with this name or email already exist.'
           })
         } else {
+
+          // saving avatar
+          if (req.body.image) {
+            const data_url = req.body.image;
+            const matches = data_url.match(/^data:.+\/(.+);base64,(.*)$/);
+            const ext = matches[1];
+            const base64 = matches[2];
+            // @ts-ignore
+            const buffer = new Buffer.from(base64, 'base64');
+
+            const fileName = req.body.name.toLowerCase() + '.' + ext;
+            user.avatar = fileName;
+
+            fs.writeFile(__dirname + '/uploads/' + fileName, buffer, function (err) {
+              // res.send('success');
+              if (err) {
+                console.log(err)
+              } else {
+
+                console.log('saved in ' + __dirname + '/uploads')
+              }
+            });
+          }
+
 
           // saving user
 
@@ -305,6 +334,7 @@ app.post('/signup', (req, res) => {
       }
     )
   }
+  // });
 });
 
 // login
@@ -371,16 +401,27 @@ app.get('/chatrooms', (req, res) => {
 
 // get room messages
 
-app.get('/chatroom/:room', (req, res) => {
-  let room = req.params.room;
+app.get('/chatroom/:room/:skipAmount', (req, res) => {
+  const { room, skipAmount } = req.params;
 
   ChatRoom.findOne({ name: room }, (err, chatRoom) => {
     if (err) {
       console.log(err);
       return;
     }
-    res.json(chatRoom.messages);
-  })
+
+    // const sliceFrom =
+
+    const messagesToSend =
+      chatRoom.messages
+        .slice(
+          chatRoom.messages.length - skipAmount - 10,
+          chatRoom.messages.length - skipAmount
+        );
+    res.json(messagesToSend);
+  });
+
+  console.log('throw more ten from ' + room + ' ' + skipAmount)
 });
 
 // get avatar

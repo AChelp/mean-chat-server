@@ -6,6 +6,8 @@ var UserSchema = new mongoose.Schema({
     name: String,
     email: String,
     password: String,
+    avatar: String,
+    description: String,
 });
 UserSchema.pre('save', function (next) {
     var user = this;

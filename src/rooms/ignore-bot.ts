@@ -3,7 +3,9 @@ import { User } from '../models/User';
 const ignoreBot = {
   name: 'Ignore bot',
   email: 'Ignore@Ignore.ignr',
-  password: 'ignoreIGNORE1'
+  password: 'ignoreIGNORE1',
+  description: 'Who said that? Who is there?',
+  avatar: 'ignorebot.jpg'
 };
 
 export const setIgnoreBot = () => {

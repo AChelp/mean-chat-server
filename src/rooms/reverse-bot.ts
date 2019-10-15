@@ -3,7 +3,9 @@ import { User } from '../models/User';
 const reverseBot = {
   name: 'Reverse bot',
   email: 'Reverse@Reverse.rvrs',
-  password: 'reverseREVERSE1'
+  password: 'reverseREVERSE1',
+  description: '?tob esreveR htiw klat ot tnaW',
+  avatar: 'reversebot.jpeg'
 };
 
 export const setReverseBot = () => {

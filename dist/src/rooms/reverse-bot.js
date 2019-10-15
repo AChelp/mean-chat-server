@@ -4,7 +4,9 @@ var User_1 = require("../models/User");
 var reverseBot = {
     name: 'Reverse bot',
     email: 'Reverse@Reverse.rvrs',
-    password: 'reverseREVERSE1'
+    password: 'reverseREVERSE1',
+    description: '?tob esreveR htiw klat ot tnaW',
+    avatar: 'reversebot.jpeg'
 };
 exports.setReverseBot = function () {
     User_1.User.find({ name: reverseBot.name }, function (err, users) {

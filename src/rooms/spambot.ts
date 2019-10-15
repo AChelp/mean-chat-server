@@ -3,7 +3,9 @@ import { User } from '../models/User';
 const spamBot = {
   name: 'Spam bot',
   email: 'Spam@Spam.spm',
-  password: 'spamSPAM1'
+  password: 'spamSPAM1',
+  description: 'Now, listen to me.',
+  avatar: 'spambot.png'
 };
 
 export const setSpamBot = () => {

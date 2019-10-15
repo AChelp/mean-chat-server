@@ -4,7 +4,9 @@ var User_1 = require("../models/User");
 var spamBot = {
     name: 'Spam bot',
     email: 'Spam@Spam.spm',
-    password: 'spamSPAM1'
+    password: 'spamSPAM1',
+    description: 'Now, listen to me.',
+    avatar: 'spambot.png'
 };
 exports.setSpamBot = function () {
     User_1.User.find({ name: spamBot.name }, function (err, users) {

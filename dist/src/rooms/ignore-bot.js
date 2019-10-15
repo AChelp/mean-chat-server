@@ -4,7 +4,9 @@ var User_1 = require("../models/User");
 var ignoreBot = {
     name: 'Ignore bot',
     email: 'Ignore@Ignore.ignr',
-    password: 'ignoreIGNORE1'
+    password: 'ignoreIGNORE1',
+    description: 'Who said that? Who is there?',
+    avatar: 'ignorebot.jpg'
 };
 exports.setIgnoreBot = function () {
     User_1.User.find({ name: ignoreBot.name }, function (err, users) {

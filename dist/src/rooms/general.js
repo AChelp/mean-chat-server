@@ -5,7 +5,9 @@ var Chatroom_1 = require("../models/Chatroom");
 var general = {
     name: 'General room',
     email: 'general@general.gnrl',
-    password: 'generalGENERAL1'
+    password: 'generalGENERAL1',
+    description: 'Place for discussions',
+    avatar: 'generalroom.jpg'
 };
 exports.setGeneral = function () {
     console.log('seting general');

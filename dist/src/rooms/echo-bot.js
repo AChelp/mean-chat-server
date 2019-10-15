@@ -4,7 +4,9 @@ var User_1 = require("../models/User");
 var echoBot = {
     name: 'Echo bot',
     email: 'Echo@Echo.ech',
-    password: 'echoECHO1'
+    password: 'echoECHO1',
+    description: 'Want to talk with Echo bot? Want to talk with Echo bot? Want to talk with Echo bot?',
+    avatar: 'echobot.jpg'
 };
 exports.setEchoBot = function () {
     User_1.User.find({ name: echoBot.name }, function (err, users) {
